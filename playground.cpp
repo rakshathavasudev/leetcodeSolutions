@@ -1,3 +1,6 @@
+#include <bits/stdc++.h>
+using namespace std;
+
 class FootballPlayground{
     
     int insideCount=0;

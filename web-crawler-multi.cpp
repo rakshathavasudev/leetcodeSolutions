@@ -77,7 +77,3 @@ public:
 };
 
 
-Qs
-why 2 locks
-why t.join afetr done
-

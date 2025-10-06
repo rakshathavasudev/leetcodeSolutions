@@ -31,133 +31,83 @@ Non-functional
 -No race condition: accessing chairs(customer) and for barber thread
 -avoid any deadlock
 
+#include <bits/stdc++.h>
+using namespace std;
 
-High-level-design
-
-thread pool: customers, 1 barber thread
-
-class called BarberShop
-	
-  
-  -Initially barber thread active
-  -check for chairs if free and waiting customers"
-  
-  		-customerarrives:
-      
-      		-check if free chairs
-          -push it to the waiting queue
-          -notify barber
-          
-        
-      barberworks
-      	
-      		-customers from waiting queue 
-          -keep count occupied chairs
-          		-notify busy
-          - remove the customer the queue
-          -increase chair count
-          
-          -if the queue is empty then current thread would be sleeping
-          			
-          	
-          
 class BarberShop {
-private:
-    int chairs;
-    queue<int> waitingRoom;
+    condition_variable cvb, cvc;
     mutex m;
-    condition_variable barberCV;
-    condition_variable customerCV;
-    bool barberBusy = false;
+    queue<int> waiting;
+    bool barberFree = true;
+    const int n = 10; // number of chairs
 
 public:
-    BarberShop(int n) : chairs(n) {}
-
-    void customerArrives(int id) {
+    void customerarrives(int id) {
         unique_lock<mutex> lock(m);
 
-        if (waitingRoom.size() == chairs) {
-            cout << "Customer " << id << " leaves (no chair).\n";
+        if (waiting.size() == n) {
+            cout << "Customer " << id << " leaves (no chairs free)\n";
             return;
         }
 
-        waitingRoom.push(id);
+        waiting.push(id);
         cout << "Customer " << id << " waits.\n";
 
-        // Wake barber if sleeping
-        barberCV.notify_one();
+        // Wake up barber if sleeping
+        cvb.notify_one();
 
-        // Wait until barber ready for this customer
-        customerCV.wait(lock, [&] {
-            return waitingRoom.front() == id && !barberBusy;
+        // Wait until it's this customer's turn and barber is free
+        cvc.wait(lock, [&] {
+            return !waiting.empty() && waiting.front() == id && barberFree;
         });
 
-        // This customer is now being served
-        barberBusy = true;
-        waitingRoom.pop();
+        // Get haircut
+        barberFree = false;
+        waiting.pop();
+        lock.unlock();
+
+        cout << "Customer " << id << " getting haircut\n";
+        this_thread::sleep_for(chrono::milliseconds(300));
+        cout << "Customer " << id << " done\n";
+
+        // Notify barber and other waiting customers
+        lock.lock();
+        barberFree = true;
+        cvc.notify_all();
     }
 
-    void barberWork() {
-        while (true) {
+    void barberworks() {
+        while(true){
             unique_lock<mutex> lock(m);
+            cvb.wait(lock, [&] { return !waiting.empty(); });
 
-            // Wait until at least one customer available
-            barberCV.wait(lock, [&] { return !waitingRoom.empty(); });
-
-            int cid = waitingRoom.front();
-            barberBusy = false;
-
-            // Signal the chosen customer
-            customerCV.notify_all();
-
+            cout << "Barber ready for next customer.\n";
+            cvc.notify_all(); // wake up customers
             lock.unlock();
 
-            // Cut hair
-            cout << "Barber cutting hair for " << cid << "\n";
-            this_thread::sleep_for(chrono::milliseconds(500));
-            cout << "Barber finished with " << cid << "\n";
-
-            lock.lock();
-            barberBusy = false;
-            lock.unlock();
+            this_thread::sleep_for(chrono::milliseconds(100));
         }
     }
 };
 
+int main() {
+    BarberShop bs;
+    vector<thread> bth;
+    
+    for(int i=0;i<3;i++){
+          bth.emplace_back(&BarberShop::barberworks, &bs);
+    }
 
-      
+    //for (auto &t : bth) t.join();
 
+    vector<thread> cth;
+    for (int i = 0; i < 20; i++) {
+        this_thread::sleep_for(chrono::milliseconds(100));
+        cth.emplace_back(&BarberShop::customerarrives, &bs, i);
+    }
+   
+    for (auto &t : cth) t.join();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+   for (auto &t : bth) t.detach(); // barber keeps running (demo)
+    return 0;
+}
